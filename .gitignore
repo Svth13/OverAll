@@ -1,3 +1,30 @@
+# Credentials и секреты
+credentials.json
+Credentials.json
+*.json
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Отчёты (если не нужны в репо)
+payroll_report_*.xlsx
+
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
