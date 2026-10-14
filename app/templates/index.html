@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}OverAll — главная{% endblock %}
+{% block content %}
+
+<h1>Учёт стажёров и расчёт овера</h1>
+<p class="subtitle">
+  Веб-интерфейс над скриптами <code>Парсинг_v4.ipynb</code> (payroll-отчёт за месяц)
+  и <code>Парсинг_снепшот_v2.ipynb</code> (снепшоты и журнал изменений).
+</p>
+
+{% if not credentials_ok %}
+<div class="alert alert-warn">
+  ⚠️ Файл <code>Credentials.json</code> не найден в корне проекта.
+  Без ключа сервисного аккаунта подключение к Google Таблице невозможно.
+</div>
+{% else %}
+<div class="alert alert-ok">✅ Ключ сервисного аккаунта найден (Credentials.json).</div>
+{% endif %}
+
+<section class="cards">
+  <div class="card">
+    <h3>Данные таблицы</h3>
+    {% if cached %}
+      <div class="big">{{ cached_rows }}</div>
+      <p>строк загружено из Google Таблицы<br><small>загружено: {{ fetched_at }}</small></p>
+    {% else %}
+      <div class="big grey">—</div>
+      <p>данные ещё не загружены в этой сессии</p>
+    {% endif %}
+    <button id="btn-fetch" class="btn" {% if not credentials_ok %}disabled{% endif %}>
+      🔄 Загрузить данные из таблицы
+    </button>
+    <div id="fetch-status" class="job-status"></div>
+  </div>
+
+  <div class="card">
+    <h3>Payroll-отчёт</h3>
+    <p>Ежедневное количество лаборантов по технологиям и техлидам,
+       сводка за месяц, учёт неоплачиваемых отпусков.</p>
+    <a class="btn btn-primary" href="/report">📑 Перейти к отчёту</a>
+  </div>
+
+  <div class="card">
+    <h3>Снепшоты</h3>
+    <div class="big">{{ snapshots_count }}</div>
+    <p>дневных файлов · история: {{ history_rows }} записей
+       ({{ history_dates }} дат) · изменений в журнале: {{ changes_rows }}</p>
+    <a class="btn btn-primary" href="/snapshots">🕒 Снепшоты и изменения</a>
+  </div>
+</section>
+
+<section>
+  <h2>Листы Google Таблицы</h2>
+  <div class="chips">
+    {% for s in sheets %}<span class="chip">{{ s }}</span>{% endfor %}
+    <span class="chip chip-accent">Промежуточный статус стажера</span>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const btn = document.getElementById('btn-fetch');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      setBusy(btn);
+      const st = document.getElementById('fetch-status');
+      st.textContent = 'Загрузка данных из Google Таблицы…';
+      try {
+        const r = await fetch('/fetch', {method: 'POST'});
+        const j = await r.json();
+        if (j.error) { st.textContent = '❌ ' + j.error; resetBtn(btn); return; }
+        pollJob(j.job_id, st, () => location.reload());
+      } catch (e) {
+        st.textContent = '❌ Ошибка запроса: ' + e;
+        resetBtn(btn);
+      }
+    });
+  }
+</script>
+{% endblock %}
