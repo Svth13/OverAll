@@ -1,0 +1,9 @@
+serv-over@owerall.iam.gserviceaccount.com
+
+проект в гугле:
+
+https://console.cloud.google.com/home/dashboard?project=owerall
+
+Чтобы этот способ подключения заработал, в проекте гугла нужно подключить библиотеки:
+Google Sheets API
+Google Drive API
