@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Снепшоты — OverAll{% endblock %}
+{% block content %}
+
+<h1>Снепшоты и журнал изменений</h1>
+<p class="subtitle">
+  Ежедневный срез состояния Google Таблицы, сквозная история в <code>snapshots/history.csv</code>
+  и журнал изменений в <code>snapshots/changes_log.csv</code> (логика
+  <code>Парсинг_снепшот_v2.ipynb</code>).
+</p>
+
+{% if not credentials_ok %}
+<div class="alert alert-warn">⚠️ Файл <code>Credentials.json</code> не найден — запуск невозможен.</div>
+{% endif %}
+
+<section class="panel">
+  <form id="snap-form">
+    <label>Дата снепшота:
+      <input type="date" name="snap_date" value="{{ today }}">
+    </label>
+    <span class="hint">(пусто = сегодня; можно указать прошлую дату для бэкфилла истории)</span>
+    <button type="submit" class="btn btn-primary" id="btn-snap"
+            {% if not credentials_ok %}disabled{% endif %}>
+      📸 Создать снепшот
+    </button>
+  </form>
+  <div id="snap-status" class="job-status"></div>
+</section>
+
+{% if result %}
+<div class="alert alert-ok">
+  ✅ Снепшот за <b>{{ result.date }}</b>: {{ result.rows }} строк →
+  <a href="/download/{{ result.file }}">{{ result.file }}</a> ·
+  всего в истории: {{ result.history_total }} записей.
+  {% if result.changes %}
+    Изменения относительно {{ result.prev_snapshot }}:
+    добавлено {{ result.changes['добавлен'] }},
+    удалено {{ result.changes['удален'] }},
+    изменено {{ result.changes['изменен'] }}.
+  {% else %}
+    Предыдущий снепшот не найден — журнал изменений не формировался.
+  {% endif %}
+</div>
+{% elif job_status and job_status.status == 'error' %}
+<div class="alert alert-err">❌ Ошибка: {{ job_status.error }}</div>
+{% endif %}
+
+<section class="cards">
+  <div class="card">
+    <h3>Дневные файлы</h3>
+    {% if snapshots %}
+      <ul class="filelist">
+        {% for s in snapshots %}
+          <li>📄 <a href="/download/{{ s.name }}">{{ s.date }}</a> <small>({{ s.size_kb }} КБ)</small></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">Файлов снепшотов пока нет.</p>
+    {% endif %}
+  </div>
+  <div class="card wide">
+    <h3>История по датам <small>(всего {{ history_rows }} записей)</small></h3>
+    <div class="table-wrap">{{ history_dates_html | safe }}</div>
+  </div>
+</section>
+
+<section>
+  <h2>Журнал изменений <small>(последние записи, всего {{ changes_rows }})</small></h2>
+  <div class="table-wrap">{{ changes_html | safe }}</div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('snap-form');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-snap');
+      const st = document.getElementById('snap-status');
+      setBusy(btn);
+      st.textContent = 'Сбор данных и формирование снепшота…';
+      try {
+        const fd = new FormData(form);
+        const r = await fetch('/snapshots/run', {method: 'POST', body: fd});
+        const j = await r.json();
+        if (j.error) { st.textContent = '❌ ' + j.error; resetBtn(btn); return; }
+        pollJob(j.job_id, st, () => location.href = '/snapshots?job=' + j.job_id);
+      } catch (err) {
+        st.textContent = '❌ Ошибка запроса: ' + err;
+        resetBtn(btn);
+      }
+    });
+  }
+</script>
+{% endblock %}

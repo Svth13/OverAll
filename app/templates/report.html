@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Payroll-отчёт — OverAll{% endblock %}
+{% block content %}
+
+<h1>Отчёт для расчёта оплаты</h1>
+<p class="subtitle">
+  Формирует <code>payroll_report_ГГГГ_ММ.xlsx</code> с листами «Ежедневный_отчет»
+  и «Сводка_за_месяц» (логика <code>Парсинг_v4.ipynb</code>).
+</p>
+
+{% if not credentials_ok %}
+<div class="alert alert-warn">⚠️ Файл <code>Credentials.json</code> не найден — запуск невозможен.</div>
+{% endif %}
+
+<section class="panel">
+  <form id="report-form" method="post" action="/report/run">
+    <label>Отчётный год:
+      <select name="year">
+        {% for y in years %}<option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Отчётный месяц:
+      <select name="month">
+        {% for m in month_names %}
+          <option value="{{ loop.index }}" {{ 'selected' if loop.index == month }}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary" id="btn-report"
+            {% if not credentials_ok %}disabled{% endif %}>
+      🧮 Сформировать отчёт
+    </button>
+    <span class="hint">{% if cached %}данные уже загружены в кэш сессии{% else %}данные будут загружены из таблицы автоматически{% endif %}</span>
+  </form>
+  <div id="report-status" class="job-status"></div>
+</section>
+
+{% if result %}
+<div class="alert alert-ok">
+  ✅ Отчёт сформирован: <b>{{ result.file }}</b> ·
+  уникальных техлидов: {{ result.techleads }} ·
+  ежедневных строк: {{ result.daily_rows }} · строк сводки: {{ result.summary_rows }} ·
+  <a class="btn btn-small" href="{{ download_url }}">⬇️ Скачать Excel</a>
+</div>
+
+<section>
+  <h2>Сводка за месяц</h2>
+  <div class="table-wrap">{{ summary_html | safe }}</div>
+</section>
+
+<section>
+  <h2>Ежедневный отчёт <small>(первые 500 строк)</small></h2>
+  <div class="table-wrap">{{ daily_html | safe }}</div>
+</section>
+{% elif job_status and job_status.status == 'error' %}
+<div class="alert alert-err">❌ Ошибка формирования отчёта: {{ job_status.error }}</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('report-form');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-report');
+      const st = document.getElementById('report-status');
+      setBusy(btn);
+      st.textContent = 'Формирование отчёта… это может занять до минуты.';
+      try {
+        const fd = new FormData(form);
+        const r = await fetch('/report/run', {method: 'POST', body: fd});
+        const j = await r.json();
+        if (j.error) { st.textContent = '❌ ' + j.error; resetBtn(btn); return; }
+        pollJob(j.job_id, st, () => {
+          location.href = '/report?year=' + fd.get('year') + '&month=' + fd.get('month')
+                        + '&job=' + j.job_id;
+        });
+      } catch (err) {
+        st.textContent = '❌ Ошибка запроса: ' + err;
+        resetBtn(btn);
+      }
+    });
+  }
+</script>
+{% endblock %}
