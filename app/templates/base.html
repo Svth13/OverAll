@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}OverAll — учёт стажёров{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="container header-inner">
+    <a class="logo" href="/">📊 OverAll</a>
+    <nav>
+      <a href="/" class="{{ 'active' if request.url.path == '/' }}">Главная</a>
+      <a href="/report" class="{{ 'active' if request.url.path.startswith('/report') }}">Отчёт для оплаты</a>
+      <a href="/leadpay" class="{{ 'active' if request.url.path.startswith('/leadpay') }}">ЗП техлидов</a>
+      <a href="/snapshots" class="{{ 'active' if request.url.path.startswith('/snapshots') }}">Снепшоты и изменения</a>
+    </nav>
+  </div>
+</header>
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+<footer>
+  <div class="container">
+    OverAll · инструмент расчёта овера техлидов на основе Google Таблицы учёта стажёров ·
+    <a href="/docs" target="_blank">API docs</a>
+  </div>
+</footer>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

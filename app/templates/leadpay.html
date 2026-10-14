@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}ЗП техлидов — OverAll{% endblock %}
+{% block content %}
+
+<h1>Расчёт оплаты техлидов</h1>
+<p class="subtitle">
+  Формула: <code>{{ formula }}</code>.<br>
+  Каждый период округляется до копеек отдельно; итог за месяц — сумма по всем периодам.
+  Логика модуля <code>app/leadpay.py</code>.
+</p>
+
+{% if not credentials_ok %}
+<div class="alert alert-warn">⚠️ Файл <code>Credentials.json</code> не найден — расчёт по данным таблицы невозможен.</div>
+{% endif %}
+
+<!-- Справочник рейтов -->
+<section class="panel">
+  <h2 style="margin-top:0">Справочник: рейты по технологиям (мес. базовая ставка, ₽)</h2>
+  <table class="table rates-table">
+    <thead><tr><th>Технология</th><th>Рейт, ₽</th><th></th></tr></thead>
+    <tbody>
+    {% for tech, rate in cfg.tech_rates.items() %}
+      <tr>
+        <td><b>{{ tech }}</b></td>
+        <td><input type="number" step="0.01" min="0" id="rate-{{ tech }}" value="{{ rate }}" style="width:130px"></td>
+        <td><button class="btn btn-small" data-tech="{{ tech }}">💾 Сохранить</button></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <form id="new-rate-form" class="inline-form">
+    <input name="tech" placeholder="Новая технология (напр. PYTHON)" required>
+    <input name="rate" type="number" step="0.01" min="0" placeholder="Рейт, ₽" required>
+    <button type="submit" class="btn btn-small">➕ Добавить рейт</button>
+  </form>
+  <div id="rates-status" class="job-status"></div>
+</section>
+
+<!-- Коэффициенты уровней -->
+<section class="panel">
+  <h2 style="margin-top:0">Справочник: коэффициенты экспертности</h2>
+  <p>{% for lvl, coef in cfg.level_coefficients.items() %}<span class="badge">{{ lvl }} → {{ coef }}</span> {% endfor %}</p>
+</section>
+
+<!-- Назначения техлидам -->
+<section class="panel">
+  <h2 style="margin-top:0">Назначения для техлидов (уровень и опциональный override рейта)</h2>
+  {% if assign_rows %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>Техлид</th><th>Технология</th><th>Рейт, ₽</th><th>Источник рейта</th>
+        <th>Уровень</th><th>Коэф.</th><th>Источник уровня</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for r in assign_rows %}
+        <tr>
+          <td>{{ r.lead }}</td>
+          <td>{{ r.tech }}</td>
+          <td>{{ "%.2f"|format(r.rate) }}</td>
+          <td>{{ r.rate_src }}{% if r.ov_rate != '' %} (override: {{ r.ov_rate }}){% endif %}</td>
+          <td>
+            <select id="lvl-{{ loop.index }}">
+              <option value="">— не задан —</option>
+              {% for l in levels %}
+                <option value="{{ l }}" {{ 'selected' if r.level == l }}>{{ l }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>{{ r.coef }}</td>
+          <td>{{ r.level_src }}</td>
+          <td>
+            <input id="ovr-{{ loop.index }}" type="number" step="0.01" min="0"
+                   placeholder="свой рейт" style="width:100px">
+            <button class="btn btn-small" data-lead="{{ r.lead }}" data-tech="{{ r.tech }}"
+                    data-lvl="lvl-{{ loop.index }}" data-ovr="ovr-{{ loop.index }}">💾 Применить</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">Пары «техлид + технология» появятся после загрузки данных с главной страницы
+     или первого расчёта ниже.</p>
+  {% endif %}
+  <div id="assign-status" class="job-status"></div>
+</section>
+
+<!-- Запуск расчёта -->
+<section class="panel">
+  <h2 style="margin-top:0">Расчёт за месяц</h2>
+  <form id="leadpay-form" method="post" action="/leadpay/run">
+    <label>Год:
+      <select name="year">
+        {% for y in years %}<option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Месяц:
+      <select name="month">
+        {% for m in month_names %}
+          <option value="{{ loop.index }}" {{ 'selected' if loop.index == month }}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary" id="btn-leadpay"
+            {% if not credentials_ok %}disabled{% endif %}>
+      💰 Рассчитать ЗП техлидов
+    </button>
+    <span class="hint">{% if cached %}данные уже в кэше сессии{% else %}данные будут загружены из таблицы автоматически{% endif %}</span>
+  </form>
+  <div id="leadpay-status" class="job-status"></div>
+</section>
+
+{% if result %}
+<div class="alert alert-ok">
+  ✅ Расчёт выполнен: <b>{{ result.file }}</b> ·
+  пар «техлид+технология»: {{ result.lead_pairs }} · периодов: {{ result.period_rows }} ·
+  итого на сумму: <b>{{ "{:,.2f}".format(result.total_sum) }} ₽</b>
+  {% if result.unset_levels %}· ⚠️ периодов без назначенного уровня (сумма=0): {{ result.unset_levels }}{% endif %}
+  · <a class="btn btn-small" href="{{ download_url }}">⬇️ Скачать Excel</a>
+</div>
+
+<section>
+  <h2>Итоги по техлидам</h2>
+  <div class="table-wrap">{{ totals_html | safe }}</div>
+  {% if total_sum is not none %}
+  <p><b>Итого по всем техлидам: {{ "{:,.2f}".format(total_sum) }} ₽</b></p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Периоды расчёта <small>(первые 500 строк)</small></h2>
+  <div class="table-wrap">{{ periods_html | safe }}</div>
+</section>
+{% elif job_status and job_status.status == 'error' %}
+<div class="alert alert-err">❌ Ошибка расчёта: {{ job_status.error }}</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function postForm(url, data, statusEl, okText) {
+  try {
+    const r = await fetch(url, {method: 'POST', body: new URLSearchParams(data)});
+    const j = await r.json();
+    if (j.ok) statusEl.textContent = '✅ ' + okText;
+    else statusEl.textContent = '❌ ' + (j.error || 'Ошибка');
+  } catch (e) { statusEl.textContent = '❌ ' + e; }
+}
+
+// Рейты технологий
+document.querySelectorAll('.rates-table button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tech = btn.dataset.tech;
+    const val = document.getElementById('rate-' + tech).value;
+    postForm('/leadpay/rates', {tech, rate: val},
+             document.getElementById('rates-status'),
+             `Рейт ${tech} обновлён (${val} ₽). Пересчитайте отчёт.`);
+  });
+});
+const newRateForm = document.getElementById('new-rate-form');
+newRateForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(newRateForm);
+  await postForm('/leadpay/rates', {tech: fd.get('tech'), rate: fd.get('rate')},
+                 document.getElementById('rates-status'),
+                 `Рейт добавлен. Обновите страницу, чтобы он появился в справочнике.`);
+});
+
+// Назначения уровней / override рейта
+document.querySelectorAll('.assign-status, tbody button[data-lead]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const level = document.getElementById(btn.dataset.lvl).value;
+    const ovRate = document.getElementById(btn.dataset.ovr).value;
+    await postForm('/leadpay/assign',
+                   {lead: btn.dataset.lead, tech: btn.dataset.tech,
+                    level: level, rate: ovRate},
+                   document.getElementById('assign-status'),
+                   `Назначение сохранено (${btn.dataset.lead} · ${btn.dataset.tech}).`);
+  });
+});
+
+// Запуск расчёта
+const form = document.getElementById('leadpay-form');
+if (form) {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-leadpay');
+    const st = document.getElementById('leadpay-status');
+    setBusy(btn);
+    st.textContent = 'Расчёт ЗП техлидов…';
+    try {
+      const fd = new FormData(form);
+      const r = await fetch('/leadpay/run', {method: 'POST', body: fd});
+      const j = await r.json();
+      if (j.error) { st.textContent = '❌ ' + j.error; resetBtn(btn); return; }
+      pollJob(j.job_id, st, () => {
+        location.href = '/leadpay?year=' + fd.get('year') + '&month=' + fd.get('month')
+                      + '&job=' + j.job_id;
+      });
+    } catch (err) {
+      st.textContent = '❌ Ошибка запроса: ' + err;
+      resetBtn(btn);
+    }
+  });
+}
+</script>
+{% endblock %}
